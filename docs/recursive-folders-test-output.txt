@@ -1,0 +1,55 @@
+Validation date: 2026-10-15
+Environment: Linux; Node.js v24.19.0; Playwright 1.62.1; Chromium 153.0.8010.0
+Command: CHROMIUM_EXECUTABLE_PATH=/tmp/chromium npm test
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> test
+> node --test scripts/tests/*.cjs
+
+PASS: 15 legacy scenarios plus rollout parsing, isolation, race and cache replacement; response body preserved; all logs exclude private contents/IDs; alternate endpoint structure detected.
+✔ scripts/tests/chatgpt-api-diagnostics.cjs (1009.278365ms)
+PASS: bounded JSON/SSE copies preserve page response, XHR/resource observations, private nested fields, role counts, merged report export.
+✔ scripts/tests/chatgpt-diagnostics-coverage.cjs (567.906778ms)
+PASS: new anchors, old precedence, safe failure, shared star/export ordering, no private text in logs.
+✔ scripts/tests/chatgpt-entry-rollout.cjs (703.955517ms)
+PASS: feature gates, missing anchors, hidden ancestors, absent buttons, offscreen entry and private content exclusion.
+✔ scripts/tests/chatgpt-feature-diagnostics.cjs (621.984339ms)
+PASS: heading DOM, wrapped headings, new/removal, duplicate safety, late API, route reset, legacy preference, removable rollout module.
+✔ scripts/tests/chatgpt-rollout-dom.cjs (539.550984ms)
+PASS: six zero-box wrappers, nested contents, excluded headings/buttons, spread, click, active marker, scroll invariance, layout shifts and legacy measurement.
+✔ scripts/tests/chatgpt-rollout-geometry.cjs (722.210311ms)
+✔ create seven levels, retain every star exactly once, and reload without migration (11.025922ms)
+✔ creation rejects missing parents and pre-existing cycles without writes (2.890426ms)
+✔ moving a whole subtree into level seven preserves descendants and star ownership (3.90666ms)
+✔ self/descendant moves, descendant-relative sorting and corrupt targets cannot create cycles (3.079211ms)
+✔ cross-level before/after placement and deep sibling reorder keep both sibling lists ordered (3.995724ms)
+✔ pin sorting applies at every depth and stable item order survives a cross-folder reorder (2.597223ms)
+✔ recursive deletion removes all branches and descendants but keeps unrelated data (2.870956ms)
+✔ deleteItems:false uncategorizes ALL descendant stars without changing their payload (3.748511ms)
+✔ paths follow renamed and moved ancestors, and nonexistent paths stay empty (2.028214ms)
+✔ legacy two-level/missing-parentId data, node IDs and notepad storage keys remain compatible (1.994903ms)
+✔ orphan/cyclic imported folders remain visible exactly once; reads never rewrite data (2.208265ms)
+✔ star moves reject missing folders, preserve node keys, and support uncategorized (2.751485ms)
+✔ 128-level imported tree builds, computes paths and deletes without a fixed depth limit (4.354866ms)
+✔ seven levels scroll horizontally and vertically without widening or scrolling the native sidebar (482.169782ms)
+✔ long deep names stay on one row and narrow/dark sidebars keep their assigned width (154.126481ms)
+✔ refresh retains scroll position; collapsing deep branches removes unnecessary overflow (155.750279ms)
+✔ delegated folder drag/drop supports deep targets, sibling nesting and promotion to root (152.993951ms)
+✔ dragging a folder onto its own descendant is refused with no persisted changes (143.977523ms)
+✔ deep folder action menu creates an eighth level and moves a subtree to root (1033.907426ms)
+✔ deep delete confirmation counts all descendants and deletes the selected subtree (183.136408ms)
+✔ search keeps every ancestor of a match at level seven in the shared tab renderer (142.473652ms)
+✔ favorite modal recursively exposes all seven levels, selects the leaf and returns its ID (2742.056717ms)
+✔ custom mouse drag moves a favorite across levels using hit-testing and persists folderId (166.160566ms)
+✔ native sidebar conversation custom drag can reach level seven without altering native markup (143.716795ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6122.63648
+
+Chrome ZIP validation: 213 manifest assets present; ZIP CRC passed; development dependencies/tests excluded.

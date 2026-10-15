@@ -521,8 +521,7 @@
    ============================================ */
 
 /* 文件夹项 */
-/* 注：二级文件夹不需要额外的 margin-left，因为 folder-content 已经有 padding-left: 24px */
-/* 这样二级文件夹会与同级收藏项对齐 */
+/* 每层通过 folder-content 的 padding-left: 24px 缩进，无需单独定义层级样式。 */
 
 .ait-folder-theme-adaptive {
     --ait-starred-item-hover-bg: rgba(0, 0, 0, 0.06);

@@ -1,0 +1,14 @@
+{
+  "name": "timeline-extension-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test scripts/tests/*.cjs",
+    "test:folders": "node --test scripts/tests/folder-manager.cjs",
+    "test:folders:browser": "node --test scripts/tests/starred-folders-browser.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "playwright": "1.62.1"
+  },
+  "engines": { "node": ">=22" }
+}

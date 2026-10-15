@@ -51,6 +51,51 @@ body.dark-theme .ait-sidebar-starred.deepseek .ait-ss-list::-webkit-scrollbar-th
 body.dark-theme .ait-sidebar-starred.deepseek .ait-ss-list::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.35); }
 .ait-ss-list { padding-right: 5px; }
 
+/* ChatGPT：只让扩展列表滚动，深层缩进不参与原生侧栏的宽度计算。
+   行的最小宽度为深层节点保留可点击空间；长标题仍使用省略号。 */
+.ait-sidebar-starred.chatgpt {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    contain: inline-size;
+}
+.ait-sidebar-starred.chatgpt > .ait-ss-list {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    max-height: min(60vh, 560px);
+    overflow: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+}
+.ait-sidebar-starred.chatgpt .ait-folder-header,
+.ait-sidebar-starred.chatgpt .timeline-starred-item {
+    min-width: 200px;
+    box-sizing: border-box;
+}
+.ait-sidebar-starred.chatgpt .ait-folder-info {
+    min-width: 0;
+    overflow: hidden;
+}
+.ait-sidebar-starred.chatgpt .ait-folder-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.ait-sidebar-starred.chatgpt > .ait-ss-list::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+.ait-sidebar-starred.chatgpt > .ait-ss-list::-webkit-scrollbar-thumb {
+    background: var(--ait-ss-icon-color);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 8px;
+}
+
 /* Header */
 .ait-ss-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px 4px 10px; margin-bottom: 2px; }
 .ait-ss-title-area { display: flex; align-items: center; gap: 2px; user-select: none; border-radius: 6px; padding: 2px 4px 2px 2px; transition: background-color 0.15s; }

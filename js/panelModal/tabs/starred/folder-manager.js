@@ -2,7 +2,7 @@
  * Folder Manager - 文件夹管理器
  * 
  * 功能：
- * - 支持最多2级文件夹（根文件夹 + 子文件夹）
+ * - parentId 邻接表存储，读取时构建任意层级的目录树
  * - 创建、编辑、删除文件夹
  * - 移动收藏项到文件夹
  * - 按文件夹分组展示
@@ -19,7 +19,82 @@ class FolderManager {
      */
     async getFolders() {
         const data = await this.storage.get('folders');
-        return data || [];
+        return Array.isArray(data) ? data : [];
+    }
+
+    _compareOrder(a, b) {
+        return (a.order || 0) - (b.order || 0);
+    }
+
+    _compareFolders(a, b) {
+        return Number(!!b.pinned) - Number(!!a.pinned) || this._compareOrder(a, b);
+    }
+
+    /**
+     * 构建一个无环的内存视图，不改写存储。旧数据中缺失的 parentId 按根处理；
+     * 悬空父级、循环链中的一条边按根处理，使已有文件夹及收藏仍可访问。
+     */
+    _buildFolderIndex(folders) {
+        const byId = new Map(folders.map(folder => [folder.id, {
+            ...folder, parentId: folder.parentId || null, children: [], items: []
+        }]));
+        const checked = new Set();
+        for (const folder of byId.values()) {
+            let current = folder;
+            const path = new Set();
+            while (current && !checked.has(current.id)) {
+                path.add(current.id);
+                const parent = byId.get(current.parentId);
+                if (!parent || path.has(parent.id)) {
+                    current.parentId = null;
+                    break;
+                }
+                current = parent;
+            }
+            for (const id of path) checked.add(id);
+        }
+        for (const folder of byId.values()) {
+            if (folder.parentId !== null) byId.get(folder.parentId).children.push(folder);
+        }
+        for (const folder of byId.values()) {
+            folder.children.sort((a, b) => this._compareFolders(a, b));
+        }
+        return byId;
+    }
+
+    /** 纯文件夹树，也供收藏弹窗使用，不必读取全部收藏。 */
+    async getFolderTree() {
+        return [...this._buildFolderIndex(await this.getFolders()).values()]
+            .filter(folder => folder.parentId === null)
+            .sort((a, b) => this._compareFolders(a, b));
+    }
+
+    /** 检查新父级的整条祖先链；folderId 为待移动文件夹。 */
+    _validateParent(folders, parentId, folderId = null) {
+        const byId = new Map(folders.map(folder => [folder.id, folder]));
+        const visited = new Set();
+        while (parentId) {
+            if (parentId === folderId || visited.has(parentId)) return 'cycle';
+            const parent = byId.get(parentId);
+            if (!parent) return 'Target not found';
+            visited.add(parentId);
+            parentId = parent.parentId || null;
+        }
+        return null;
+    }
+
+    _reindexSiblings(folders, parentId, excludeId = null) {
+        const siblings = folders.filter(folder =>
+            (folder.parentId || null) === parentId && folder.id !== excludeId
+        ).sort((a, b) => this._compareOrder(a, b));
+        siblings.forEach((folder, index) => { folder.order = index; });
+        return siblings;
+    }
+
+    async _validateStarredTarget(folderId) {
+        if (folderId && !(await this.getFolders()).some(folder => folder.id === folderId)) {
+            throw new Error('目标文件夹不存在');
+        }
     }
     
     /**
@@ -30,20 +105,13 @@ class FolderManager {
      * @returns {Promise<Object>} 新创建的文件夹
      */
     async createFolder(name, parentId = null, icon = '') {
-        // 检查嵌套层级（最多2级）
-        if (parentId) {
-            const folders = await this.getFolders();
-            const parent = folders.find(f => f.id === parentId);
-            
-            if (parent && parent.parentId !== null) {
-                throw new Error('最多支持2级文件夹');
-            }
-        }
-        
         const folders = await this.getFolders();
+        parentId = parentId || null;
+        const error = this._validateParent(folders, parentId);
+        if (error) throw new Error(error);
         
         // 计算当前层级的 order
-        const siblings = folders.filter(f => f.parentId === parentId);
+        const siblings = this._reindexSiblings(folders, parentId);
         
         const newFolder = {
             id: `folder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -95,23 +163,30 @@ class FolderManager {
             throw new Error('文件夹不存在');
         }
         
-        const childFolderIds = folders
-            .filter(f => f.parentId === folderId)
-            .map(f => f.id);
-        
-        const newFolders = folders.filter(f => 
-            f.id !== folderId && !childFolderIds.includes(f.id)
-        );
+        // 显式栈是递归遍历的等价写法，visited 防止旧坏数据导致死循环。
+        const children = new Map();
+        for (const folder of folders) {
+            if (!children.has(folder.parentId)) children.set(folder.parentId, []);
+            children.get(folder.parentId).push(folder.id);
+        }
+        const deletedIds = new Set();
+        const pending = [folderId];
+        while (pending.length > 0) {
+            const id = pending.pop();
+            if (deletedIds.has(id)) continue;
+            deletedIds.add(id);
+            for (const childId of children.get(id) || []) pending.push(childId);
+        }
+        const newFolders = folders.filter(folder => !deletedIds.has(folder.id));
+        this._reindexSiblings(newFolders, folderToDelete.parentId || null);
         await this.storage.set('folders', newFolders);
-        
-        const allDeletedFolderIds = [folderId, ...childFolderIds];
         
         await StarStorageManager.batchUpdate(items => {
             if (deleteItems) {
-                return items.filter(item => !allDeletedFolderIds.includes(item.folderId));
+                return items.filter(item => !deletedIds.has(item.folderId));
             }
             return items.map(item => {
-                if (allDeletedFolderIds.includes(item.folderId)) {
+                if (deletedIds.has(item.folderId)) {
                     return { ...item, folderId: null };
                 }
                 return item;
@@ -126,6 +201,7 @@ class FolderManager {
      * @param {string|null} targetFolderId - 目标文件夹 ID（null = 未分类）
      */
     async moveStarredToFolder(turnId, targetFolderId) {
+        await this._validateStarredTarget(targetFolderId);
         // 构建原始的 storage key: chatTimelineStar:url:index
         const key = `chatTimelineStar:${turnId}`;
         const item = await StarStorageManager.findByKey(key);
@@ -135,7 +211,7 @@ class FolderManager {
         }
         
         // 更新 folderId 字段
-        await StarStorageManager.update(key, { folderId: targetFolderId });
+        await StarStorageManager.update(key, { folderId: targetFolderId || null });
         
     }
     
@@ -198,71 +274,15 @@ class FolderManager {
             uncategorized: [] // 未分类收藏项（默认文件夹）
         };
         
-        // 创建文件夹 ID 集合，用于快速查找
-        const folderIds = new Set(folders.map(f => f.id));
-        const assignedTurnIds = new Set(); // 记录已分配的收藏项
-        
-        
-        // 1. 先构建根文件夹（置顶的在前）
-        const rootFolders = folders.filter(f => f.parentId === null);
-        rootFolders.sort((a, b) => {
-            if (a.pinned && !b.pinned) return -1;
-            if (!a.pinned && b.pinned) return 1;
-            return a.order - b.order;
-        });
-        
-        // 2. 为每个根文件夹添加子文件夹和收藏项
-        for (const rootFolder of rootFolders) {
-            const folderNode = {
-                ...rootFolder,
-                children: [], // 子文件夹
-                items: []     // 当前文件夹的收藏项
-            };
-            
-            // 找出子文件夹
-            const childFolders = folders.filter(f => f.parentId === rootFolder.id);
-            childFolders.sort((a, b) => a.order - b.order);
-            
-            for (const childFolder of childFolders) {
-                const childNode = {
-                    ...childFolder,
-                    items: [] // 子文件夹的收藏项
-                };
-                
-                for (const item of starredItemsArray) {
-                    if (item.folderId !== childFolder.id) continue;
-                    const info = extractItemInfo(item);
-                    childNode.items.push(mapItem(item, info));
-                    assignedTurnIds.add(info.turnId);
-                }
-                sortItems(childNode.items);
-                
-                folderNode.children.push(childNode);
-            }
-            
-            for (const item of starredItemsArray) {
-                if (item.folderId !== rootFolder.id) continue;
-                const info = extractItemInfo(item);
-                folderNode.items.push(mapItem(item, info));
-                assignedTurnIds.add(info.turnId);
-            }
-            sortItems(folderNode.items);
-            
-            tree.folders.push(folderNode);
-        }
-        
-        // 3. 添加未分类收藏项（没有 folderId 或 folderId 指向已删除文件夹的收藏项）
-        
+        // 每个节点都有 children/items；每个收藏按 folderId 只分配一次。
+        const byId = this._buildFolderIndex(folders);
+        tree.folders = [...byId.values()].filter(folder => folder.parentId === null)
+            .sort((a, b) => this._compareFolders(a, b));
         for (const item of starredItemsArray) {
-            const { urlWithoutProtocol, nodeKey, turnId } = extractItemInfo(item);
-            
-            // 如果该收藏项还没有被分配到任何文件夹，则归为未分类（默认文件夹）
-            // 这包括：folderId 为 null/undefined 或 folderId 指向已删除的文件夹
-            if (!assignedTurnIds.has(turnId)) {
-                tree.uncategorized.push(mapItem(item, { urlWithoutProtocol, nodeKey, turnId }));
-            }
+            const target = byId.get(item.folderId);
+            (target ? target.items : tree.uncategorized).push(mapItem(item, extractItemInfo(item)));
         }
-        
+        for (const folder of byId.values()) sortItems(folder.items);
         sortItems(tree.uncategorized);
         
         
@@ -277,17 +297,14 @@ class FolderManager {
     async getFolderPath(folderId) {
         if (!folderId) return '';
         
-        const folders = await this.getFolders();
-        const folder = folders.find(f => f.id === folderId);
-        
-        if (!folder) return '';
-        
-        if (folder.parentId) {
-            const parent = folders.find(f => f.id === folder.parentId);
-            return parent ? `${parent.name} / ${folder.name}` : folder.name;
+        const byId = this._buildFolderIndex(await this.getFolders());
+        const names = [];
+        let folder = byId.get(folderId);
+        while (folder) {
+            names.push(folder.name);
+            folder = byId.get(folder.parentId);
         }
-        
-        return folder.name;
+        return names.reverse().join(' / ');
     }
     
     /**
@@ -300,7 +317,7 @@ class FolderManager {
     async isFolderNameExists(name, parentId = null, excludeId = null) {
         const folders = await this.getFolders();
         const siblings = folders.filter(f => 
-            f.parentId === parentId && 
+            (f.parentId || null) === (parentId || null) &&
             f.id !== excludeId
         );
         
@@ -315,13 +332,15 @@ class FolderManager {
      * @param {'before'|'after'} position - 放在参考项前面还是后面
      */
     async reorderStarredInFolder(turnId, targetFolderId, refTurnId, position) {
+        await this._validateStarredTarget(targetFolderId);
+        if (turnId === refTurnId) return;
         const srcKey = `chatTimelineStar:${turnId}`;
         await StarStorageManager.batchUpdate(items => {
             const srcIdx = items.findIndex(i => i.key === srcKey);
             if (srcIdx === -1) return items;
 
             const [item] = items.splice(srcIdx, 1);
-            item.folderId = targetFolderId;
+            item.folderId = targetFolderId || null;
 
             if (!refTurnId) {
                 items.push(item);
@@ -329,7 +348,8 @@ class FolderManager {
             }
 
             const refKey = `chatTimelineStar:${refTurnId}`;
-            const refIdx = items.findIndex(i => i.key === refKey);
+            const refIdx = items.findIndex(i => i.key === refKey &&
+                (i.folderId || null) === (targetFolderId || null));
             if (refIdx === -1) { items.push(item); return items; }
 
             const insertIdx = position === 'before' ? refIdx : refIdx + 1;
@@ -339,7 +359,7 @@ class FolderManager {
     }
 
     /**
-     * 移动文件夹到目标位置（同级排序）
+     * 移动到目标前后；跨级时同时改为目标的父级，整棵子树随之移动。
      * @param {string} folderId - 要移动的文件夹 ID
      * @param {string} targetFolderId - 目标文件夹 ID
      * @param {'before'|'after'} position - 插入到目标的前面还是后面
@@ -348,28 +368,25 @@ class FolderManager {
         const folders = await this.getFolders();
         const folder = folders.find(f => f.id === folderId);
         const target = folders.find(f => f.id === targetFolderId);
-        if (!folder || !target) return;
-        if ((folder.parentId || null) !== (target.parentId || null)) return;
+        if (!folder || !target) return { ok: false, error: 'Folder not found' };
+        if (folderId === targetFolderId) return { ok: true };
+        if (position !== 'before' && position !== 'after') return { ok: false, error: 'Invalid position' };
+        const parentId = target.parentId || null;
+        const error = this._validateParent(folders, parentId, folderId);
+        if (error) return { ok: false, error };
 
-        const parentId = folder.parentId || null;
-        const siblings = folders.filter(f => (f.parentId || null) === parentId);
-        siblings.sort((a, b) => (a.order || 0) - (b.order || 0));
-
-        const fromIdx = siblings.findIndex(f => f.id === folderId);
-        if (fromIdx === -1) return;
-        siblings.splice(fromIdx, 1);
-
+        const oldParentId = folder.parentId || null;
+        const siblings = this._reindexSiblings(folders, parentId, folderId);
         const toIdx = siblings.findIndex(f => f.id === targetFolderId);
-        if (toIdx === -1) return;
         const insertIdx = position === 'before' ? toIdx : toIdx + 1;
+        folder.parentId = parentId;
         siblings.splice(insertIdx, 0, folder);
-
-        for (let i = 0; i < siblings.length; i++) {
-            const original = folders.find(f => f.id === siblings[i].id);
-            if (original) original.order = i;
+        siblings.forEach((sibling, index) => { sibling.order = index; });
+        if (oldParentId !== parentId) {
+            this._reindexSiblings(folders, oldParentId);
         }
-
         await this.storage.set('folders', folders);
+        return { ok: true };
     }
 
     /**
@@ -383,31 +400,16 @@ class FolderManager {
         const folder = folders.find(f => f.id === folderId);
         if (!folder) return { ok: false, error: 'Folder not found' };
 
-        if ((folder.parentId || null) === (newParentId || null)) return { ok: true };
-
-        if (newParentId === folderId) return { ok: false, error: 'Cannot move into itself' };
-
-        if (newParentId) {
-            const hasChildren = folders.some(f => f.parentId === folderId);
-            if (hasChildren) {
-                return { ok: false, error: 'hasChildren' };
-            }
-            const parent = folders.find(f => f.id === newParentId);
-            if (!parent) return { ok: false, error: 'Target not found' };
-            if (parent.parentId) {
-                return { ok: false, error: 'maxDepth' };
-            }
-        }
+        newParentId = newParentId || null;
+        const error = this._validateParent(folders, newParentId, folderId);
+        if (error) return { ok: false, error };
+        if ((folder.parentId || null) === newParentId) return { ok: true };
 
         const oldParentId = folder.parentId || null;
-        folder.parentId = newParentId || null;
-
-        const newSiblings = folders.filter(f => (f.parentId || null) === (newParentId || null) && f.id !== folderId);
+        folder.parentId = newParentId;
+        const newSiblings = this._reindexSiblings(folders, newParentId, folderId);
         folder.order = newSiblings.length;
-
-        const oldSiblings = folders.filter(f => (f.parentId || null) === oldParentId && f.id !== folderId);
-        oldSiblings.sort((a, b) => (a.order || 0) - (b.order || 0));
-        oldSiblings.forEach((f, i) => { f.order = i; });
+        this._reindexSiblings(folders, oldParentId);
 
         await this.storage.set('folders', folders);
         return { ok: true };

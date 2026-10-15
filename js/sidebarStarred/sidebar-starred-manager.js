@@ -120,7 +120,7 @@ class SidebarStarredManager {
             const tipsTitle = TimelineI18n.getMessage('starredHelpTipsTitle') || '使用小技巧：';
             const tip1 = TimelineI18n.getMessage('starredHelpTip1') || '拖动对话到文件夹。';
             const tip2 = TimelineI18n.getMessage('starredHelpTip2') || '拖动文件夹中的对话调整位置。';
-            const tip3 = TimelineI18n.getMessage('starredHelpTip3') || '拖动二级文件夹调整位置。';
+            const tip3 = TimelineI18n.getMessage('starredHelpTip3') || '拖动文件夹：中间移入，顶部或底部调整位置。';
             const tip4 = TimelineI18n.getMessage('starredHelpTip4') || '双击文件夹或对话，快速编辑。';
             const html = `<div style="font-size:12px;line-height:1.6">`
                 + `<div style="font-size:13px;font-weight:600;margin-bottom:6px">${desc}</div>`

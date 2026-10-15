@@ -804,7 +804,7 @@
     "message": "Drag items within a folder to reorder."
   },
   "starredHelpTip3": {
-    "message": "Drag subfolders to reorder."
+    "message": "Drop folders in the middle to nest, or at the top/bottom to reorder."
   },
   "starredHelpTip4": {
     "message": "Double-click a folder or item to edit."
@@ -814,6 +814,12 @@
   },
   "folderMoveMaxDepth": {
     "message": "Maximum folder depth reached"
+  },
+  "folderMoveCycle": {
+    "message": "Cannot move a folder into itself or its descendants"
+  },
+  "folderMoveToRoot": {
+    "message": "Move to root"
   },
   "guideSubtitle": {
     "message": "AI conversation enhancement extension"

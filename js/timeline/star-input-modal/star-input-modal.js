@@ -5,7 +5,7 @@
  * 
  * 特性：
  * - 输入收藏标题
- * - 选择文件夹（支持一级+二级文件夹）
+ * - 选择文件夹（递归目录）
  * - 键盘交互（ESC取消、Enter确认）
  * - 点击遮罩层取消
  * - 深色模式自适应
@@ -213,54 +213,17 @@ class StarInputModal {
                 }
                 
                 // 构建文件夹菜单
-                const folders = await config.folderManager.getFolders();
-                const items = [];
-                
-                // 构建文件夹树（一级 + 二级）
-                const rootFolders = folders.filter(f => !f.parentId).sort((a, b) => a.order - b.order);
-                
-                for (const rootFolder of rootFolders) {
-                    const childFolders = folders
-                        .filter(f => f.parentId === rootFolder.id)
-                        .sort((a, b) => a.order - b.order);
-                    
-                    const folderItem = {
-                        label: rootFolder.name,
-                        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                        </svg>`,
-                        onClick: () => {
-                            selectedFolderId = rootFolder.id;
-                            selectedFolderPath = rootFolder.name;
-                            folderText.textContent = rootFolder.name;
-                            folderText.classList.remove('placeholder');
-                        }
-                    };
-                    
-                    // 构建子菜单
-                    const subItems = [];
-                    
-                    // 添加子文件夹
-                    childFolders.forEach(childFolder => {
-                        subItems.push({
-                            label: childFolder.name,
-                            icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                            </svg>`,
-                            onClick: () => {
-                                selectedFolderId = childFolder.id;
-                                selectedFolderPath = `${rootFolder.name} / ${childFolder.name}`;
-                                folderText.textContent = selectedFolderPath;
-                                folderText.classList.remove('placeholder');
-                            }
-                        });
-                    });
-                    
-                    // 添加"新建子文件夹"选项
-                    // 只有当有子文件夹时才添加分隔线
-                    if (childFolders.length > 0) {
-                        subItems.push({ type: 'divider' });
-                    }
+                const folderTree = await config.folderManager.getFolderTree();
+                const selectFolder = (folder, path) => {
+                    selectedFolderId = folder.id;
+                    selectedFolderPath = path;
+                    folderText.textContent = path;
+                    folderText.classList.remove('placeholder');
+                };
+                const buildFolderItem = (folder, ancestorNames = []) => {
+                    const names = [...ancestorNames, folder.name];
+                    const subItems = folder.children.map(child => buildFolderItem(child, names));
+                    if (subItems.length > 0) subItems.push({ type: 'divider' });
                     subItems.push({
                         label: TimelineI18n.getMessage('vpmzkx'),
                         className: 'create-action',
@@ -270,21 +233,21 @@ class StarInputModal {
                             <line x1="9" y1="14" x2="15" y2="14"/>
                         </svg>`,
                         onClick: async () => {
-                            const newFolder = await this._createFolder(rootFolder.id, config.folderManager);
+                            const newFolder = await this._createFolder(folder.id, config.folderManager);
                             if (newFolder) {
-                                selectedFolderId = newFolder.id;
-                                selectedFolderPath = `${rootFolder.name} / ${newFolder.name}`;
-                                folderText.textContent = selectedFolderPath;
-                                folderText.classList.remove('placeholder');
+                                selectFolder(newFolder, await config.folderManager.getFolderPath(newFolder.id));
                             }
                         }
                     });
                     
-                    // 添加子菜单
-                    folderItem.children = subItems;
-                    
-                    items.push(folderItem);
-                }
+                    return {
+                        label: folder.name,
+                        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
+                        onClick: () => selectFolder(folder, names.join(' / ')),
+                        children: subItems
+                    };
+                };
+                const items = folderTree.map(folder => buildFolderItem(folder));
                 
                 // 添加"新建一级文件夹"选项
                 items.push({ type: 'divider' });
@@ -475,7 +438,7 @@ class StarInputModal {
     }
     
     /**
-     * 创建文件夹（一级或二级）
+     * 创建文件夹（任意父级）
      * @param {string|null} parentId - 父文件夹 ID（null = 一级文件夹）
      * @param {Object} folderManager - FolderManager 实例
      * @returns {Promise<Object|null>} 新创建的文件夹对象，失败返回 null

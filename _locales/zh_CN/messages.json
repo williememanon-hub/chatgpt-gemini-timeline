@@ -816,7 +816,7 @@
     "message": "拖动文件夹中的对话调整位置。"
   },
   "starredHelpTip3": {
-    "message": "拖动二级文件夹调整位置。"
+    "message": "拖动文件夹：中间移入，顶部或底部调整位置。"
   },
   "starredHelpTip4": {
     "message": "双击文件夹或对话，快速编辑。"
@@ -826,6 +826,12 @@
   },
   "folderMoveMaxDepth": {
     "message": "已达最大层级"
+  },
+  "folderMoveCycle": {
+    "message": "不能将文件夹移入自身或其后代"
+  },
+  "folderMoveToRoot": {
+    "message": "移到根目录"
   },
   "guideSubtitle": {
     "message": "AI 对话增强插件"

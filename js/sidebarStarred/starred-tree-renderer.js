@@ -87,6 +87,8 @@ class StarredTreeRenderer {
         const renderVersion = ++this._renderVersion;
         const list = this.opts.getListContainer();
         if (!list) return;
+        const scrollLeft = list.scrollLeft;
+        const scrollTop = list.scrollTop;
         this._activeRenderList = list;
         list.classList.toggle('ait-folder-theme-adaptive', renderOptions.themeAdaptive === true);
 
@@ -130,6 +132,9 @@ class StarredTreeRenderer {
                     </div>
                 </div>`;
         }
+        // 替换 DOM 后恢复局部滚动位置，收藏刷新不应把深层目录拉回最左侧。
+        list.scrollLeft = scrollLeft;
+        list.scrollTop = scrollTop;
     }
 
     async renderFolder(folder, container, level = 0, renderVersion = this._renderVersion) {
@@ -146,11 +151,8 @@ class StarredTreeRenderer {
                 ? folder.items
                 : folder.items.filter(item => this._matchesSearch(item, searchQuery));
 
-            const hasMatchingChildren = (folder.children || []).some(child => {
-                const childNameMatches = child.name.toLowerCase().includes(searchQuery);
-                const childHasItems = child.items.some(item => this._matchesSearch(item, searchQuery));
-                return childNameMatches || childHasItems;
-            });
+            const hasMatchingChildren = (folder.children || [])
+                .some(child => this._folderMatchesSearch(child, searchQuery));
 
             if (!folderNameMatches && filteredItems.length === 0 && !hasMatchingChildren) {
                 return;
@@ -389,7 +391,7 @@ class StarredTreeRenderer {
                 const folderEl = actBtn.closest('.ait-folder-item');
                 if (folderEl) {
                     const data = this._folderDataMap.get(folderEl.dataset.folderId);
-                    if (data) this._showFolderMenu(actBtn, data.folder, data.level);
+                    if (data) this._showFolderMenu(actBtn, data.folder);
                 }
                 return;
             }
@@ -573,8 +575,6 @@ class StarredTreeRenderer {
                 if (!data) { e.preventDefault(); return; }
                 this._dragState = {
                     type: 'folder', id: folderId,
-                    sourceLevel: data.level,
-                    sourceParentId: data.folder.parentId || null,
                     element: folderEl
                 };
                 e.dataTransfer.effectAllowed = 'move';
@@ -612,30 +612,21 @@ class StarredTreeRenderer {
                 this._setDropIndicator(folderEl, 'inside');
 
             } else if (this._dragState.type === 'folder') {
-                if (targetFolderId === this._dragState.id || targetFolderId === '__default__') {
+                if (targetFolderId === '__default__' || this._dragState.element.contains(folderEl)) {
                     this._clearDropIndicator();
                     return;
                 }
                 const targetData = this._folderDataMap.get(targetFolderId);
                 if (!targetData) { this._clearDropIndicator(); return; }
 
-                const sameParent = targetData.level === this._dragState.sourceLevel &&
-                    (targetData.folder.parentId || null) === this._dragState.sourceParentId;
-
-                if (sameParent) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    const headerEl = folderEl.querySelector(':scope > .ait-folder-header');
-                    const rect = headerEl ? headerEl.getBoundingClientRect() : folderEl.getBoundingClientRect();
-                    const pos = e.clientY < (rect.top + rect.height / 2) ? 'before' : 'after';
-                    this._setDropIndicator(folderEl, pos);
-                } else if (targetData.level === 0 && targetFolderId !== this._dragState.sourceParentId) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    this._setDropIndicator(folderEl, 'inside');
-                } else {
-                    this._clearDropIndicator();
-                }
+                // 所有层级使用相同的三个区域：上/下四分之一排序，中间移入。
+                const headerEl = folderEl.querySelector(':scope > .ait-folder-header');
+                const rect = headerEl.getBoundingClientRect();
+                const ratio = (e.clientY - rect.top) / rect.height;
+                const position = ratio < 0.25 ? 'before' : ratio > 0.75 ? 'after' : 'inside';
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                this._setDropIndicator(folderEl, position);
             }
         };
 
@@ -676,24 +667,21 @@ class StarredTreeRenderer {
                 if (targetFolderId === this._dragState.id || targetFolderId === '__default__') {
                     this._cleanupDrag(); return;
                 }
-                const position = this._dropPosition;
-                if (position === 'inside') {
-                    const result = await this.folderManager.moveFolderToParent(this._dragState.id, targetFolderId);
-                    if (result.ok) {
+                const position = this._currentDropTarget === folderEl ? this._dropPosition : null;
+                try {
+                    let result;
+                    if (position === 'inside') {
+                        result = await this.folderManager.moveFolderToParent(this._dragState.id, targetFolderId);
+                    } else if (position === 'before' || position === 'after') {
+                        result = await this.folderManager.moveFolderToPosition(this._dragState.id, targetFolderId, position);
+                    }
+                    if (result?.ok) {
                         this._toastAtFolder(folderEl, 'dragMoveSuccess', 'Moved');
                         await this.opts.onAfterAction();
-                    } else if (result.error === 'hasChildren') {
-                        this._toast('error', 'folderMoveHasChildren', 'Has subfolders, cannot nest further');
-                    } else if (result.error === 'maxDepth') {
-                        this._toast('error', 'folderMoveMaxDepth', 'Maximum folder depth reached');
+                    } else if (result?.error === 'cycle') {
+                        this._toast('error', 'folderMoveCycle', 'Cannot move a folder into itself or its descendants');
                     }
-                } else if (position === 'before' || position === 'after') {
-                    try {
-                        await this.folderManager.moveFolderToPosition(this._dragState.id, targetFolderId, position);
-                        this._toastAtFolder(folderEl, 'dragMoveSuccess', 'Moved');
-                        await this.opts.onAfterAction();
-                    } catch (err) {
-                    }
+                } catch (err) {
                 }
             }
             this._cleanupDrag();
@@ -790,14 +778,21 @@ class StarredTreeRenderer {
 
     // ==================== 菜单 ====================
 
-    _showFolderMenu(trigger, folder, level) {
+    _showFolderMenu(trigger, folder) {
         const items = [];
 
-        if (level === 0) {
+        items.push({
+            label: TimelineI18n.getMessage('vpmzkx') || 'New Subfolder',
+            icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>',
+            onClick: () => this.handleCreateFolder(folder.id)
+        });
+        if (folder.parentId) {
             items.push({
-                label: TimelineI18n.getMessage('vpmzkx') || 'New Subfolder',
-                icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>',
-                onClick: () => this.handleCreateFolder(folder.id)
+                label: TimelineI18n.getMessage('folderMoveToRoot') || 'Move to root',
+                onClick: async () => {
+                    const result = await this.folderManager.moveFolderToParent(folder.id, null);
+                    if (result.ok) await this.opts.onAfterAction();
+                }
             });
         }
 
@@ -953,15 +948,15 @@ class StarredTreeRenderer {
     async handleDeleteFolder(folderId) {
         try {
             const tree = await this.folderManager.getStarredByFolder();
-            let folderData = tree.folders.find(f => f.id === folderId);
-            if (!folderData) {
-                for (const parent of tree.folders) {
-                    if (parent.children) {
-                        folderData = parent.children.find(c => c.id === folderId);
-                        if (folderData) break;
-                    }
+            const findFolder = (folders) => {
+                for (const folder of folders) {
+                    if (folder.id === folderId) return folder;
+                    const found = findFolder(folder.children || []);
+                    if (found) return found;
                 }
-            }
+                return null;
+            };
+            const folderData = findFolder(tree.folders);
             if (!folderData) { this._toast('error', 'zpxmkv', 'Folder not found'); return; }
 
             const totalItems = this._countAllItems(folderData);
@@ -1191,6 +1186,12 @@ class StarredTreeRenderer {
     }
 
     // ==================== 工具 ====================
+
+    _folderMatchesSearch(folder, query) {
+        return folder.name.toLowerCase().includes(query) ||
+            folder.items.some(item => this._matchesSearch(item, query)) ||
+            (folder.children || []).some(child => this._folderMatchesSearch(child, query));
+    }
 
     _countAllItems(folder) {
         let count = folder.items.length;

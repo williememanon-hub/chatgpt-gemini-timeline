@@ -1,5 +1,5 @@
 /**
- * Starred Tab - 收藏列表（支持2级文件夹）
+ * Starred Tab - 收藏列表（递归目录）
  *
  * 树渲染 + 交互 + 导航均委托给 StarredTreeRenderer（共享）。
  * 本类只负责：容器/工具栏、搜索框、BaseTab 生命周期。

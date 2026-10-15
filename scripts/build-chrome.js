@@ -30,6 +30,8 @@ function build() {
         `-x ".git/*" ` +
         `-x ".gitignore" ` +
         `-x "node_modules/*" ` +
+        `-x "test-results/*" ` +
+        `-x "package*.json" ` +
         `-x ".DS_Store" ` +
         `-x "*/.DS_Store" ` +
         `-x "*.md" ` +

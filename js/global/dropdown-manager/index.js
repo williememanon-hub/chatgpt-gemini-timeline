@@ -521,10 +521,8 @@ class GlobalDropdownManager {
                                 (e.target === this.dropdown || this.dropdown.contains(e.target));
         
         // ✨ 检查是否点击的是子菜单
-        const clickedSubmenu = this.state.activeSubmenu &&
-                               this.state.activeSubmenu.element &&
-                               (e.target === this.state.activeSubmenu.element ||
-                                this.state.activeSubmenu.element.contains(e.target));
+        const clickedSubmenu = this.state.activeSubmenus.some(submenu =>
+            submenu.element && submenu.element.contains(e.target));
         
         // 检查是否点击的是 trigger
         const clickedTrigger = this.state.triggerElement && 
@@ -599,11 +597,6 @@ class GlobalDropdownManager {
      */
     _showSubmenu(item, parentElement, level = 0) {
         const submenuLevel = level + 1; // 子菜单的层级
-        
-        // ✨ 最大层级限制：3 级（0=主菜单, 1=二级, 2=三级）
-        if (submenuLevel > 2) {
-            return;
-        }
         
         // 清除延迟关闭定时器
         if (this.timers.submenuHide) {
@@ -718,6 +711,7 @@ class GlobalDropdownManager {
             // 右侧空间不足，显示在左侧
             left = parentRect.left - submenuRect.width - gap;
         }
+        left = Math.max(10, Math.min(left, viewport.width - submenuRect.width - 10));
         
         // 垂直定位：与父菜单项顶部对齐
         top = parentRect.top;
